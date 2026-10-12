@@ -329,16 +329,16 @@ homebrew_casks:
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/oinit"]
           end
 
-# dockers:
-#   - id: oinit-ca
-#     ids:
-#       - oinit-ca
-#     image_templates:
-#       - "{{ .Env.REGISTRY }}/{{ .Env.IMAGE }}:latest"
-#       - "{{ .Env.REGISTRY }}/{{ .Env.IMAGE }}:{{ .Tag }}"
-#     dockerfile: "build/Dockerfile.goreleaser"
-#     build_flag_templates:
-#       - "--pull"
-#       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-#       - "--label=org.opencontainers.image.created={{.Date}}"
-#       - "--label=org.opencontainers.image.version={{.Version}}"
+dockers:
+  - id: oinit-ca
+    ids:
+      - oinit-ca
+    image_templates:
+      - "docker.io/sshoidc/oinit-ca:latest"
+      - "docker.io/sshoidc/oinit-ca:{{ .Tag }}"
+    dockerfile: "build/Dockerfile.goreleaser"
+    build_flag_templates:
+      - "--pull"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
