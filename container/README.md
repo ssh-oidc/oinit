@@ -75,7 +75,9 @@ The image does NOT provision accounts. Pick one:
   and an NSS `files`-only `/etc/nsswitch.conf` over the image files.
 - LDAP: mount a real `/etc/nslcd.conf` (template:
   `container/nslcd.conf.template`). The entrypoint then switches NSS to
-  `files ldap` and starts nslcd.
+  `files ldap` and starts nslcd. An LDAP-backed pairing example with a
+  separate motley_cue API lives in the motley_cue repository
+  (`container/compose/sshd-oinit.yml`).
 
 In federated deployments accounts typically come from motley_cue (its
 `local_unix` or LDAP backend `user/deploy`), but any pre-existing account
