@@ -1,0 +1,17 @@
+# nslcd configuration template for the oinit-sshd image.
+# This is a starting point for LDAP account resolution; mount a completed
+# version at /etc/nslcd.conf (uid/gid/bind options may need customisation
+# for your directory).
+#
+# When /etc/nslcd.conf exists, the container entrypoint switches NSS to
+# "files ldap" and starts nslcd automatically.
+#
+# The container image does NOT provision accounts; provisioning (as well as
+# token validation) is the job of motley_cue, which the oinit CA calls.
+uid nslcd
+gid nslcd
+uri ldap://ldap:389
+base dc=example,dc=org
+
+# binddn cn=oinit,ou=services,dc=example,dc=org
+# bindpw change-me

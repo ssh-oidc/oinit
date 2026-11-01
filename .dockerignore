@@ -1,0 +1,10 @@
+.git
+.github
+.gitignore
+.gitlab-ci-scripts
+.gitlab-ci.yml
+results
+container/compose
+man
+docs
+*.md
