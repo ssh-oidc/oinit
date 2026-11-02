@@ -10,8 +10,12 @@ The build context is the repository root.
 | `oinit` | client CLI (`oinit add/list/match`) | `oinit` (unprivileged) |
 
 A dedicated GitHub Actions workflow (`.github/workflows/publish-images.yml`)
-publishes these images to the sshoidc Docker Hub namespace on version tags,
-multi-arch (`linux/amd64`, `linux/arm64`), tagged `latest` and `<version>`.
+publishes these images to the sshoidc Docker Hub namespace, multi-arch
+(`linux/amd64`, `linux/arm64`):
+
+- pushes to `prerel` publish the moving `prerel` tag (`sha-<short>` as well)
+  and deploy `sshoidc/oinit-ca` to the CD host;
+- version tags publish `latest` and the semver tags.
 
 ## oinit-ca
 
