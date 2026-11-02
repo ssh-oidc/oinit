@@ -1,0 +1,62 @@
+# Demo stack: oinit CA + motley_cue all-in-one oinit appliance.
+#
+# The motley_cue appliance (allinone-oinit) provisions local Unix accounts
+# (backend=local_unix) and runs sshd with oinit certificate login. The CA
+# validates OIDC tokens against that motley_cue instance and signs the short
+# lived SSH certificates users log in with (as principal "oinit").
+#
+# This compose file builds the motley_cue image from the sibling motley_cue
+# repository (../motley_cue). Run from container/compose/:
+#
+#   docker compose up -d oinit-ca
+#   # generate, sign the host key and install the CA assets:
+#   docker compose run --rm --entrypoint sh motley-cue /ca-signup.sh
+#   docker compose up -d motley-cue
+#
+# Then configure the CA hostgroup (see demo-ca-config.ini) and restart:
+#   docker compose cp demo-ca-config.ini oinit-ca:/etc/oinit/ca-config.ini
+#   docker compose restart oinit-ca
+
+name: oinit-demo
+
+services:
+  oinit-ca:
+    build:
+      context: ../..
+      dockerfile: container/Dockerfile
+      target: oinit-ca
+    image: sshoidc/oinit-ca:demo
+    restart: unless-stopped
+    ports:
+      - '8082:8082'
+    volumes:
+      # config (copied in later) and generated CA key pairs
+      - ca_state:/etc/oinit
+      # the motley_cue appliance state, for signing its host key (step 2)
+      - mc_state:/state:ro
+
+  motley-cue:
+    build:
+      context: ../../../motley_cue
+      dockerfile: container/Dockerfile
+      target: allinone-oinit
+    image: sshoidc/motley-cue-allinone:demo
+    restart: unless-stopped
+    ports:
+      # users connect with:  ssh oinit@localhost:2222  (certificate login)
+      - '2222:22'
+    environment:
+      MOTLEY_CUE_VARIANT: oinit
+      # the CA reaches motley_cue across the compose network
+      BIND: 0.0.0.0:8080
+    volumes:
+      - mc_state:/state
+      # read-only access to the CA keys (signing helper) and its source
+      - ca_state:/ca:ro
+      - ./ca-signup.sh:/ca-signup.sh:ro
+    depends_on:
+      - oinit-ca
+
+volumes:
+  ca_state:
+  mc_state:

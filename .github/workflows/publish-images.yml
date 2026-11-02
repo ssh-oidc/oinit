@@ -1,0 +1,131 @@
+name: Publish container images
+
+# Builds and publishes the container images for all targets of
+# container/Dockerfile (oinit-ca, oinit-sshd, oinit) to Docker Hub.
+# Replaces the goreleaser dockers bullet, which was limited to oinit-ca,
+# single-arch, and published only latest/semver tags.
+#
+# Pushes to prerel publish a moving `prerel` tag; version tags publish semver
+# tags (plus `latest` for non-prerelease tags). A push to prerel also deploys
+# sshoidc/oinit-ca to the CD host (ssh-oidc-cicd.vm.fedcloud.eu); the
+# motley-cue appliance is deployed by the motley_cue repository.
+
+on:
+  push:
+    branches:
+      - prerel
+    tags:
+      - v*.*.*
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  images:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - oinit-ca
+          - oinit-sshd
+          - oinit
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: sshoidc/${{ matrix.target }}
+          tags: |
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=prerel,enable=${{ github.ref == 'refs/heads/prerel' }}
+            # workflow_dispatch builds (no tag) still get a usable tag:
+            type=sha,prefix=sha-,format=short
+
+      - name: Resolve version build arg
+        id: ver
+        run: |
+          ref="${GITHUB_REF_NAME#v}"
+          echo "version=$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push ${{ matrix.target }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: container/Dockerfile
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            OINIT_VERSION=${{ steps.ver.outputs.version }}
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy oinit-ca to ssh-oidc-cicd
+    runs-on: ubuntu-latest
+    needs: images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/prerel'
+    environment: production
+    concurrency:
+      group: deploy-prerel
+      cancel-in-progress: false
+    steps:
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Deploy oinit CA
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "OINIT_CA_TAG=prerel flock -w 600 /tmp/webssh-oidc-deploy.lock sh -s" <<'EOF'
+          set -eu
+          cd /opt/webssh-oidc
+          COMPOSE='docker compose -f docker/compose-oinit.yaml -f docker/compose.prod.yaml'
+          OINIT_CA_TAG="$OINIT_CA_TAG" $COMPOSE pull oinit-ca
+          OINIT_CA_TAG="$OINIT_CA_TAG" $COMPOSE up -d --wait --no-deps oinit-ca
+          $COMPOSE ps oinit-ca
+          EOF
+      - name: Show remote logs on failure
+        if: failure()
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd /opt/webssh-oidc && docker compose -f docker/compose-oinit.yaml -f docker/compose.prod.yaml logs --tail=100 oinit-ca" || true

@@ -329,16 +329,7 @@ homebrew_casks:
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/oinit"]
           end
 
-dockers:
-  - id: oinit-ca
-    ids:
-      - oinit-ca
-    image_templates:
-      - "docker.io/sshoidc/oinit-ca:latest"
-      - "docker.io/sshoidc/oinit-ca:{{ .Tag }}"
-    dockerfile: "build/Dockerfile.goreleaser"
-    build_flag_templates:
-      - "--pull"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
+# Container images are no longer published through goreleaser: the pin
+# .github/workflows/publish-images.yml workflow builds all targets of
+# container/Dockerfile (oinit-ca, oinit-sshd, oinit) with buildx,
+# multi-arch, and richer tags. GitLab CI skips docker publishing anyway.
