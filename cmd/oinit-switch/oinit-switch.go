@@ -8,7 +8,6 @@ import (
 	golog "log"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -41,6 +40,13 @@ const (
 // cannot redirect su to an attacker binary (this process runs as the oinit
 // service user and may hold CAP_CHOWN).
 var suCandidates = []string{"/usr/bin/su", "/bin/su"}
+
+// getentCandidates are the absolute paths searched, in order, for the getent
+// binary. getent resolves names through the host's NSS configuration, so LDAP
+// and SSSD users are visible just as they are to sshd(8) and su(1). A fixed
+// list is used instead of exec.LookPath so a caller-controlled $PATH cannot
+// substitute another program.
+var getentCandidates = []string{"/usr/bin/getent", "/bin/getent"}
 
 // usernameRe mirrors the CA's username validation. Dots are accepted because
 // Feudal/PUNCH4NFDI LDAP deployments use firstname.lastname usernames; the
@@ -124,6 +130,17 @@ func findSu() (string, error) {
 	return "", errors.New("su not found in " + strings.Join(suCandidates, ", "))
 }
 
+// findGetent returns the absolute path to the getent binary from the fixed
+// candidate list, never consulting $PATH.
+func findGetent() (string, error) {
+	for _, p := range getentCandidates {
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p, nil
+		}
+	}
+	return "", errors.New("getent not found in " + strings.Join(getentCandidates, ", "))
+}
+
 var fileLogger *golog.Logger
 var socketCleanupPath string // set once socket is found; cleaned up on fatal exit
 
@@ -187,7 +204,10 @@ func isAllowedTarget(u string, curUid int, cfg switchConfig) (bool, string) {
 	}
 	uid, err := getUid(u)
 	if err != nil {
-		return false, "no such user on this host"
+		if errors.Is(err, errUserNotFound) {
+			return false, "no such user on this host"
+		}
+		return false, fmt.Sprintf("user lookup failed: %v", err)
 	}
 	return classifyTarget(u, uid, curUid, cfg)
 }
@@ -210,20 +230,123 @@ func classifyTarget(username string, uid, curUid int, cfg switchConfig) (bool, s
 	return true, ""
 }
 
-// getUser returns the uid for the given username. If the user doesn't exist,
-// an error is returned.
+// errUserNotFound distinguishes a missing account from an NSS lookup failure.
+var errUserNotFound = errors.New("user not found")
+
+// passwdEntry is the subset of a passwd(5) entry oinit-switch needs.
+type passwdEntry struct {
+	Name string
+	Uid  int
+	Gid  int
+}
+
+// parsePasswdEntry parses one colon-separated passwd(5) line.
+func parsePasswdEntry(line string) (passwdEntry, error) {
+	fields := strings.Split(line, ":")
+	if len(fields) != 7 {
+		return passwdEntry{}, fmt.Errorf("malformed passwd entry %q", line)
+	}
+	if fields[0] == "" {
+		return passwdEntry{}, errors.New("passwd entry has an empty name")
+	}
+
+	uid, err := strconv.Atoi(fields[2])
+	if err != nil {
+		return passwdEntry{}, fmt.Errorf("invalid uid %q: %w", fields[2], err)
+	}
+	gid, err := strconv.Atoi(fields[3])
+	if err != nil {
+		return passwdEntry{}, fmt.Errorf("invalid gid %q: %w", fields[3], err)
+	}
+	if uid < 0 || gid < 0 {
+		return passwdEntry{}, fmt.Errorf("negative uid/gid in passwd entry %q", line)
+	}
+
+	return passwdEntry{Name: fields[0], Uid: uid, Gid: gid}, nil
+}
+
+// getentPasswd resolves key through getent(1) and returns all matching passwd
+// entries. getent uses the host's NSS configuration, so it sees LDAP/SSSD users
+// that a pure-Go /etc/passwd lookup would miss. A missing key yields
+// errUserNotFound; an operational NSS failure yields a different error.
+func getentPasswd(key string) ([]passwdEntry, error) {
+	getent, err := findGetent()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := exec.Command(getent, "passwd", key)
+	cmd.Env = []string{"PATH=" + SAFE_PATH, "LC_ALL=C"}
+	out, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			if exitErr.ExitCode() == 2 {
+				return nil, fmt.Errorf("%w: %s", errUserNotFound, key)
+			}
+			if stderr := strings.TrimSpace(string(exitErr.Stderr)); stderr != "" {
+				return nil, fmt.Errorf("getent passwd %q: %w: %s", key, err, stderr)
+			}
+		}
+		return nil, fmt.Errorf("getent passwd %q: %w", key, err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	entries := make([]passwdEntry, 0, len(lines))
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		entry, err := parsePasswdEntry(line)
+		if err != nil {
+			return nil, fmt.Errorf("getent passwd %q: %w", key, err)
+		}
+		entries = append(entries, entry)
+	}
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("%w: %s", errUserNotFound, key)
+	}
+	return entries, nil
+}
+
+// lookupPasswd resolves name through getent(1) and returns the entry whose name
+// matches exactly.
+func lookupPasswd(name string) (passwdEntry, error) {
+	entries, err := getentPasswd(name)
+	if err != nil {
+		return passwdEntry{}, err
+	}
+	for _, entry := range entries {
+		if entry.Name == name {
+			return entry, nil
+		}
+	}
+	return passwdEntry{}, fmt.Errorf("%w: %s", errUserNotFound, name)
+}
+
+// lookupPasswdByUID resolves uid through getent(1) and returns the entry whose
+// uid matches exactly.
+func lookupPasswdByUID(uid int) (passwdEntry, error) {
+	entries, err := getentPasswd(strconv.Itoa(uid))
+	if err != nil {
+		return passwdEntry{}, err
+	}
+	for _, entry := range entries {
+		if entry.Uid == uid {
+			return entry, nil
+		}
+	}
+	return passwdEntry{}, fmt.Errorf("%w: uid %d", errUserNotFound, uid)
+}
+
+// getUid returns the uid for name via getent(1), so LDAP/SSSD users resolve the
+// same way they do for sshd and su.
 func getUid(name string) (int, error) {
-	user, err := user.Lookup(name)
+	entry, err := lookupPasswd(name)
 	if err != nil {
 		return -1, err
 	}
-
-	uid, err := strconv.Atoi(user.Uid)
-	if err != nil {
-		return -1, err
-	}
-
-	return uid, nil
+	return entry.Uid, nil
 }
 
 // findForwardedOidcSocket searches /proc/net/unix for a unix socket whose path
@@ -430,11 +553,8 @@ func main() {
 	// Arguments are the allowed users (certificate principals).
 	allowedUsers := os.Args[1:]
 
-	curUser, err := user.Current()
-	if err != nil {
-		fatalf(ERR_INTERNAL)
-	}
-	curUid, err := strconv.Atoi(curUser.Uid)
+	curUid := os.Getuid()
+	curUser, err := lookupPasswdByUID(curUid)
 	if err != nil {
 		fatalf(ERR_INTERNAL)
 	}
@@ -453,6 +573,9 @@ func main() {
 		}
 		uid, err := getUid(u)
 		if err != nil {
+			if !errors.Is(err, errUserNotFound) {
+				logf(fmt.Sprintf("skipping principal %q: user lookup failed: %v", u, err))
+			}
 			continue
 		}
 		if uid == curUid {
@@ -475,7 +598,7 @@ func main() {
 	}
 
 	if curUid != oinitUid {
-		fatalNotAllowed("oinit-switch must be invoked as the '" + OINIT_USER + "' service user, not as '" + curUser.Username + "'")
+		fatalNotAllowed("oinit-switch must be invoked as the '" + OINIT_USER + "' service user, not as '" + curUser.Name + "'")
 	}
 
 	// Find the first allowed user that is a different, permitted account and
@@ -503,16 +626,16 @@ func main() {
 	// Chown the forwarded socket to the target user (requires CAP_CHOWN).
 	var suOpts []string
 	if socketPath != "" {
-		targetUser, err := user.Lookup(target)
-		if err == nil {
-			targetUid, _ := strconv.Atoi(targetUser.Uid)
-			targetGid, _ := strconv.Atoi(targetUser.Gid)
+		targetUser, err := lookupPasswd(target)
+		if err != nil {
+			logf(fmt.Sprintf("Could not setup oidc-agent forwarding. Lookup target %s: %v failed", target, err))
+		} else {
 			// Use fchownat with AT_SYMLINK_NOFOLLOW rather than os.Chown, which
 			// follows symlinks. The socket path lives in a world-writable /tmp
 			// and this process holds CAP_CHOWN, so following a symlink swapped
 			// in at the path could chown an arbitrary target file. This changes
 			// only the socket itself, never a link target.
-			if err := unix.Fchownat(unix.AT_FDCWD, socketPath, targetUid, targetGid, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			if err := unix.Fchownat(unix.AT_FDCWD, socketPath, targetUser.Uid, targetUser.Gid, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 				logf(fmt.Sprintf("Could not setup oidc-agent forwarding. Chown socket %s to %s: %v failed", socketPath, target, err))
 			} else {
 				logf(fmt.Sprintf("oidc-agent forwarding enabled via %s", socketPath))

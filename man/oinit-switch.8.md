@@ -21,9 +21,11 @@ No setuid bit is required. The privilege change is performed by PAM: a rule
 permits the `oinit` account to `su` to permitted users without a password.
 **oinit-switch** enforces that it is being run as the `oinit` account,
 re-validates each certificate principal against the same user-name rules the CA
-uses, resolves **su**(1) from a fixed absolute-path list, and resets `PATH` to a
-safe value, so no program is resolved through a caller-controlled environment. If
-the resolved target is the current user, it exits immediately.
+uses, resolves target accounts through **getent**(1) so the host's NSS
+configuration (including LDAP/SSSD) is honoured, resolves **su**(1) from a fixed
+absolute-path list, and resets `PATH` to a safe value, so no program is resolved
+through a caller-controlled environment. If the resolved target is the current
+user, it exits immediately.
 
 By default it refuses to switch to system users (including `root`); such accounts
 must be explicitly allowed on the server. See **oinit-switch.conf**(5).
@@ -36,7 +38,8 @@ must be explicitly allowed on the server. See **oinit-switch.conf**(5).
 
 Target-selection policy is read from */etc/oinit/oinit-switch.conf*; see
 **oinit-switch.conf**(5). Requirements: the `oinit` account must exist, target
-users must exist, **su**(1) must be available, and PAM must permit the switch.
+users must exist, **getent**(1) and **su**(1) must be available, and PAM must
+permit the switch.
 
 # FILES
 
@@ -54,12 +57,13 @@ user, not running as the `oinit` account, or a TTY allocated for command
 execution.
 
 "Internal error. oinit might not be set up correctly."
-: The `oinit` account does not exist, or **su**(1) was not found.
+: The `oinit` account does not exist, or **getent**(1) or **su**(1) was not
+found.
 
 # SEE ALSO
 
-**oinit-switch.conf**(5), **oinit-shell**(8), **oinit-ca**(8), **su**(1),
-**sshd**(8), **oidc-agent**(1)
+**oinit-switch.conf**(5), **oinit-shell**(8), **oinit-ca**(8), **getent**(1),
+**su**(1), **sshd**(8), **oidc-agent**(1)
 
 # AUTHOR
 

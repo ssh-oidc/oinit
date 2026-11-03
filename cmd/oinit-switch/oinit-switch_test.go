@@ -1,6 +1,9 @@
 package main
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -59,6 +62,95 @@ func TestIsValidUsername(t *testing.T) {
 			t.Errorf("isValidUsername(%q) = true, want false", v)
 		}
 	}
+}
+
+func TestParsePasswdEntry(t *testing.T) {
+	tests := []struct {
+		name    string
+		line    string
+		want    passwdEntry
+		wantErr bool
+	}{
+		{
+			name: "regular entry",
+			line: "alice:x:1000:1001:Alice:/home/alice:/bin/bash",
+			want: passwdEntry{Name: "alice", Uid: 1000, Gid: 1001},
+		},
+		{
+			name: "dotted Feudal username",
+			line: "alice.hertzog:x:1002:1003:Alice Hertzog:/home/alice.hertzog:/bin/bash",
+			want: passwdEntry{Name: "alice.hertzog", Uid: 1002, Gid: 1003},
+		},
+		{
+			name: "empty gecos",
+			line: "bob:x:1004:1004::/home/bob:/bin/sh",
+			want: passwdEntry{Name: "bob", Uid: 1004, Gid: 1004},
+		},
+		{name: "too few fields", line: "alice:x:1000:1000::/home/alice", wantErr: true},
+		{name: "too many fields", line: "alice:x:1000:1000:a:b:/home/alice:/bin/sh", wantErr: true},
+		{name: "empty name", line: ":x:1000:1000::/home/alice:/bin/sh", wantErr: true},
+		{name: "invalid uid", line: "alice:x:notanumber:1000::/home/alice:/bin/sh", wantErr: true},
+		{name: "invalid gid", line: "alice:x:1000:notanumber::/home/alice:/bin/sh", wantErr: true},
+		{name: "negative uid", line: "alice:x:-1:1000::/home/alice:/bin/sh", wantErr: true},
+		{name: "negative gid", line: "alice:x:1000:-1::/home/alice:/bin/sh", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parsePasswdEntry(tt.line)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parsePasswdEntry(%q) error = %v, wantErr %v", tt.line, err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Fatalf("parsePasswdEntry(%q) = %+v, want %+v", tt.line, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetentPasswd(t *testing.T) {
+	oldCandidates := getentCandidates
+	defer func() { getentCandidates = oldCandidates }()
+
+	writeFake := func(t *testing.T, script string) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "getent")
+		if err := os.WriteFile(path, []byte(script), 0755); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	t.Run("found", func(t *testing.T) {
+		getentCandidates = []string{writeFake(t, "#!/bin/sh\nprintf '%s\\n' 'alice.hertzog:x:1002:1003:Alice Hertzog:/home/alice.hertzog:/bin/bash'\n")}
+		entries, err := getentPasswd("alice.hertzog")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := passwdEntry{Name: "alice.hertzog", Uid: 1002, Gid: 1003}
+		if len(entries) != 1 || entries[0] != want {
+			t.Fatalf("getentPasswd = %+v, want [%+v]", entries, want)
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		getentCandidates = []string{writeFake(t, "#!/bin/sh\nexit 2\n")}
+		_, err := getentPasswd("alice.hertzog")
+		if !errors.Is(err, errUserNotFound) {
+			t.Fatalf("getentPasswd error = %v, want errUserNotFound", err)
+		}
+	})
+
+	t.Run("lookup failure", func(t *testing.T) {
+		getentCandidates = []string{writeFake(t, "#!/bin/sh\necho 'nss unavailable' >&2\nexit 1\n")}
+		_, err := getentPasswd("alice.hertzog")
+		if err == nil || errors.Is(err, errUserNotFound) {
+			t.Fatalf("getentPasswd error = %v, want operational failure", err)
+		}
+		if !strings.Contains(err.Error(), "nss unavailable") {
+			t.Fatalf("getentPasswd error = %v, want stderr included", err)
+		}
+	})
 }
 
 func TestParseSwitchConfig(t *testing.T) {
