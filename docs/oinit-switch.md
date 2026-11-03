@@ -28,6 +28,8 @@ No configuration files needed. Requirements:
 - `oinit` system user must exist
 - Target users must exist on the system
 - `su` command must be available
+- `getent` command must be available so target accounts are resolved through
+  NSS, including LDAP/SSSD users
 
 ### Usage
 
@@ -51,7 +53,7 @@ ssh user@host "ls -la"
   - TTY allocated for command execution
 - **"Internal error. oinit might not be set up correctly."**:
   - oinit user doesn't exist
-  - su command not found
+  - getent or su command not found
 
 ### Security Considerations
 

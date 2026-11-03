@@ -259,6 +259,8 @@ nfpms:
       apk:
         dependencies:
           - libcap
+          # getent(1), used by oinit-switch for NSS lookups, lives in musl-utils.
+          - musl-utils
         recommends:
           - openssh
           - util-linux
