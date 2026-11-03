@@ -47,8 +47,8 @@ func TestClassifyTarget(t *testing.T) {
 }
 
 func TestIsValidUsername(t *testing.T) {
-	valid := []string{"alice", "git", "_svc", "a-b_c", "root"}
-	invalid := []string{"", "Alice", "a b", "a;b", "a/b", "-a", "root$", strings.Repeat("a", 33)}
+	valid := []string{"alice", "git", "_svc", "a-b_c", "root", "alice.hertzog", "a..b", "alice."}
+	invalid := []string{"", "Alice", "a b", "a;b", "a/b", "-a", "root$", ".alice", "..", "alice/..", strings.Repeat("a", 33)}
 	for _, v := range valid {
 		if !isValidUsername(v) {
 			t.Errorf("isValidUsername(%q) = false, want true", v)
