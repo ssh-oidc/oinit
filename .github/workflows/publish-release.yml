@@ -1,5 +1,5 @@
 # This workflow will create a new Github release whenever a tag following
-# semantic versioning is pushed to the main branch.
+# semantic versioning is pushed to the master branch.
 
 on:
   push:
@@ -19,20 +19,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get branch
+      # Make sure the tag was pushed to master
+      - name: Verify release tag is on master
         run: |
-          raw=$(git branch -r --contains "$GITHUB_REF")
-          branch=${raw/origin\/}
-          echo "BRANCH=$branch" >> "$GITHUB_ENV"
-
-      # Make sure tag was pushed to main branch
-      - name: Check branch
-        if: endsWith(env.BRANCH, 'main') == false
-        run: |
-          gh run cancel ${{ github.run_id }}
-          gh run watch ${{ github.run_id }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          git fetch --no-tags origin master
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master
 
       - name: Set up Go
         uses: actions/setup-go@v4

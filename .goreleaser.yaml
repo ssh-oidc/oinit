@@ -10,6 +10,8 @@ before:
 release:
   draft: true
   prerelease: auto
+  use_existing_draft: true
+  replace_existing_draft: false
 
 # Self-hosted GitLab (codebase.helmholtz.cloud) is the release target when
 # goreleaser runs in GitLab CI (release provider is auto-detected from the git
