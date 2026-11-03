@@ -13,9 +13,9 @@ A dedicated GitHub Actions workflow (`.github/workflows/publish-images.yml`)
 publishes these images to the sshoidc Docker Hub namespace, multi-arch
 (`linux/amd64`, `linux/arm64`):
 
-- pushes to `prerel` publish the moving `prerel` tag (`sha-<short>` as well)
-  and deploy `sshoidc/oinit-ca` to the CD host;
-- version tags publish `latest` and the semver tags.
+- pushes to `prerel` publish the moving `prerel` tag (`sha-<short>` as well);
+- version tags publish `latest` and the semver tags, and deploy
+  `sshoidc/oinit-ca` to the CD host.
 
 ## oinit-ca
 

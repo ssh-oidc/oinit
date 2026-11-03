@@ -134,7 +134,11 @@ When changing the REST API annotations, run `make swagger` to generate the Swagg
 ### Branches
 
 Development happens on feature branches checked out from and merged back into `prerel`.
-When ready, commits are merged into `main` and tagged as release.
+When ready, commits are merged into `master` and tagged as release.
+
+Publishing a release tag also builds the container images and deploys
+`oinit-ca` to the CD host; pushes to `prerel` only publish the moving
+`prerel` images.
 
 
 ## License
