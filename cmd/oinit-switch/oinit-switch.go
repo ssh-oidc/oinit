@@ -42,10 +42,12 @@ const (
 // service user and may hold CAP_CHOWN).
 var suCandidates = []string{"/usr/bin/su", "/bin/su"}
 
-// usernameRe mirrors the CA's username validation. oinit-switch re-validates the
-// certificate principals it is handed as an independent, defence-in-depth check,
-// since the CA that signed them runs on a different host.
-var usernameRe = regexp.MustCompile(`^[a-z_][a-z0-9_-]*$`)
+// usernameRe mirrors the CA's username validation. Dots are accepted because
+// Feudal/PUNCH4NFDI LDAP deployments use firstname.lastname usernames; the
+// leading-character rule still prevents "." and "..". oinit-switch re-validates
+// the certificate principals it is handed as an independent, defence-in-depth
+// check, since the CA that signed them runs on a different host.
+var usernameRe = regexp.MustCompile(`^[a-z_][a-z0-9._-]*$`)
 
 // isValidUsername reports whether name is a safe local username to use as a su
 // target (no whitespace or shell metacharacters, bounded length).

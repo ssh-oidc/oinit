@@ -35,14 +35,16 @@ const (
 	ERR_RATE_LIMITED   = "Too many requests, please slow down."
 )
 
-// usernameRe matches a plain lowercase POSIX-style local username. The
-// resolved username is embedded into the certificate principals and the
-// force-command ("oinit-switch <username>"); restricting it to this set
-// ensures it cannot contain whitespace or other characters that would change
-// how oinit-shell splits the forced command or which account oinit-switch
-// selects. Uppercase and Samba machine-account trailing "$" are intentionally
-// disallowed.
-var usernameRe = regexp.MustCompile(`^[a-z_][a-z0-9_-]*$`)
+// usernameRe matches a lowercase local username. Dots are allowed because
+// Feudal/PUNCH4NFDI LDAP deployments use firstname.lastname usernames. The
+// leading character must still be [a-z_], so "." and ".." cannot be usernames,
+// and a dot is not a shell metacharacter. The resolved username is embedded
+// into the certificate principals and the force-command
+// ("oinit-switch <username>"); restricting it to this set ensures it cannot
+// contain whitespace or other characters that would change how oinit-shell
+// splits the forced command or which account oinit-switch selects. Uppercase
+// and Samba machine-account trailing "$" are intentionally disallowed.
+var usernameRe = regexp.MustCompile(`^[a-z_][a-z0-9._-]*$`)
 
 // isValidUsername reports whether name is a safe local username to embed into a
 // certificate's principals and force-command.
