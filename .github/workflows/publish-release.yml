@@ -39,6 +39,16 @@ jobs:
         with:
           distribution: goreleaser
           version: latest
-          args: release --clean --skip=homebrew
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          RELEASE_TARGET: github
+
+      - name: Upload Homebrew cask
+        run: |
+          cask="$(find results -type f -path '*/Casks/oinit.rb' -print -quit)"
+          test -n "$cask"
+          gh release upload "$GITHUB_REF_NAME" "$cask" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

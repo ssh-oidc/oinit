@@ -298,12 +298,11 @@ homebrew_casks:
     manpages:
       - man/oinit.1
       - man/oinit_hosts.5
-    # Download URL for the archive: the GitLab generic Package Registry of this
-    # project (populated by the GitLab release above). This keeps the binary
-    # distribution on codebase.helmholtz.cloud. CI_API_V4_URL and CI_PROJECT_ID
-    # are provided automatically by GitLab CI.
+    # Download URL for the archive: GitHub releases use the uploaded release
+    # asset, while GitLab CI keeps using the generic Package Registry.
+    # CI_API_V4_URL and CI_PROJECT_ID are provided automatically by GitLab CI.
     url:
-      template: "{{ .Env.CI_API_V4_URL }}/projects/{{ .Env.CI_PROJECT_ID }}/packages/generic/{{ .ProjectName }}/{{ .Tag }}/{{ .ArtifactName }}"
+      template: '{{ if eq (index .Env "RELEASE_TARGET") "github" }}https://github.com/ssh-oidc/oinit/releases/download/{{ .Tag }}/{{ .ArtifactName }}{{ else }}{{ index .Env "CI_API_V4_URL" }}/projects/{{ index .Env "CI_PROJECT_ID" }}/packages/generic/{{ .ProjectName }}/{{ .Tag }}/{{ .ArtifactName }}{{ end }}'
     # The tap is a separate Git repository named homebrew-<x> that goreleaser
     # pushes the generated Casks/oinit.rb into during `goreleaser release`. The
     # tap repo must exist. Users then install with:
@@ -313,12 +312,13 @@ homebrew_casks:
       name: homebrew-oinit
       # PAT (or GitHub App token) with contents:write on the tap repo. In GitLab
       # CI this is a masked CI/CD variable, read from the environment here.
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+      token: '{{ index .Env "HOMEBREW_TAP_TOKEN" }}'
     directory: Casks
     homepage: "https://codebase.helmholtz.cloud/m-team/oidc/ssh/oinit/"
     description: "Client to use SSH certificates with OpenSSH via OpenID Connect"
-    # Don't try to push a cask for snapshot/prerelease/dirty builds.
-    skip_upload: auto
+    # Push only when a tap token is available; otherwise generate the cask as a
+    # release artifact. `auto` also skips snapshot/prerelease/dirty builds.
+    skip_upload: '{{ if index .Env "HOMEBREW_TAP_TOKEN" }}auto{{ else }}true{{ end }}'
     commit_author:
       name: goreleaser
       email: noreply@kit.edu
