@@ -529,11 +529,20 @@ func handleCommandMatch(args []string) {
 		} else {
 			useAgent = true
 
-			if exists, err := sshutil.AgentHasCertificate(sshAgent, host); err == nil && exists {
+			if exists, err := sshutil.AgentHasValidCertificate(sshAgent, host); err == nil && exists {
 				log.LogDebugTTY("Using stored certificate from ssh-agent")
 				// log.LogSuccess("non-tty Using stored certificate from ssh-agent")
-				// Agent already holds certificate, therefore do not request a new one
+				// Agent already holds a valid certificate, therefore do not request a new one
 				return
+			}
+
+			// The agent holds no usable certificate for this host. Remove any
+			// expired or not-yet-valid oinit certificates so OpenSSH does not
+			// offer them, then request a fresh one below.
+			if err := sshutil.AgentRemoveCertificates(sshAgent, host); err != nil {
+				log.LogDebugTTY("Could not remove stale certificates from ssh-agent: " + err.Error())
+			} else {
+				log.LogDebugTTY("Removed stale certificates from ssh-agent")
 			}
 		}
 	} else {
@@ -657,14 +666,25 @@ func handleCommandMatch(args []string) {
 	}
 
 	cert := certPk.(*ssh.Certificate)
-	validUntil := time.Unix(int64(cert.ValidBefore-1), 0)
+	validUntil := time.Unix(int64(cert.ValidBefore), 0)
 	log.LogDebugTTY(fmt.Sprintf("Received a certificate which is valid until %s", validUntil))
+
+	lifetime := time.Until(validUntil)
+	if lifetime <= 0 {
+		log.LogFatalTTY("The CA returned an already expired certificate.")
+	}
+	lifetimeSecs := uint32(lifetime / time.Second)
+	if lifetimeSecs == 0 {
+		// A sub-second remaining lifetime must not turn into 0, which agents
+		// interpret as "never expires".
+		lifetimeSecs = 1
+	}
 
 	if useAgent {
 		if sshAgent.Add(agent.AddedKey{
 			PrivateKey:   privkey,
 			Certificate:  cert,
-			LifetimeSecs: uint32(time.Until(validUntil).Seconds()),
+			LifetimeSecs: lifetimeSecs,
 			// Tag the cert so oinit can later recognise its own certificate for
 			// this host in the agent (and remove it on 'oinit del'); the CA's
 			// KeyId is the audit identity and does not encode the host.
@@ -686,7 +706,8 @@ func handleCommandMatch(args []string) {
 }
 
 // hasValidCertificateFile checks if a valid certificate file exists for the given host.
-// Returns true if the certificate file exists and is still valid (not expired).
+// Returns true if the certificate file exists and is currently valid (neither
+// expired nor not yet valid).
 func hasValidCertificateFile(host, hostport string) bool {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -732,11 +753,15 @@ func hasValidCertificateFile(host, hostport string) bool {
 		return false
 	}
 
-	// Check if certificate is still valid (not expired)
-	now := time.Now().Unix()
-	if uint64(now) >= cert.ValidBefore {
-		log.LogDebugTTY("Certificate Expired")
-		return false // Certificate has expired
+	// Check if certificate is currently valid (neither expired nor not yet valid)
+	now := time.Now()
+	if !sshutil.CertificateValidAt(cert, now) {
+		if uint64(now.Unix()) >= cert.ValidBefore {
+			log.LogDebugTTY("Certificate Expired")
+		} else {
+			log.LogDebugTTY("Certificate is not yet valid")
+		}
+		return false
 	}
 
 	return true

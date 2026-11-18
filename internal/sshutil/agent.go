@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -112,14 +113,25 @@ func agentGetOinitCertificates(agent agent.ExtendedAgent, host string) ([]ssh.Ce
 	return certificates, nil
 }
 
-// AgentHasCertificate returns a bool indicating whether a certificate issued
-// by oinit-ca for the given host is currently present in the agent.
+// AgentHasValidCertificate returns a bool indicating whether a currently valid
+// certificate issued by oinit-ca for the given host is present in the agent.
+// Expired and not-yet-valid certificates do not count.
 // An error is returned when communication with the agent is not possible, for
 // example if it isn't running.
-func AgentHasCertificate(agent agent.ExtendedAgent, host string) (bool, error) {
+func AgentHasValidCertificate(agent agent.ExtendedAgent, host string) (bool, error) {
 	certificates, err := agentGetOinitCertificates(agent, host)
+	if err != nil {
+		return false, err
+	}
 
-	return len(certificates) != 0, err
+	now := time.Now()
+	for i := range certificates {
+		if CertificateValidAt(&certificates[i], now) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // AgentRemoveCertificates removes all certificates issued by oinit-ca for the

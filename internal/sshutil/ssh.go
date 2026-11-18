@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -98,6 +99,17 @@ func AddSSHKnownHost(host, port, pubkey string) error {
 	f.Close()
 
 	return nil
+}
+
+// CertificateValidAt reports whether cert is valid at now, following OpenSSH's
+// rule: valid after <= current time < valid before.
+func CertificateValidAt(cert *ssh.Certificate, now time.Time) bool {
+	if cert == nil {
+		return false
+	}
+
+	current := uint64(now.Unix())
+	return cert.ValidAfter <= current && current < cert.ValidBefore
 }
 
 func GenerateMatchBlock() string {
