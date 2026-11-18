@@ -9,10 +9,20 @@ import (
 // generateUserCertificate generates a new OpenSSH certificate based on the
 // given public key. The principals and forceCommand are configurable per
 // host group. If forceCommand is empty, no force-command critical option
-// is set.
-func generateUserCertificate(host string, pubkey ssh.PublicKey, username string, subject string, issuer string, duration uint64, principals []string, forceCommand string) ssh.Certificate {
-	validAfter := uint64(time.Now().Unix())
-	validBefore := validAfter + duration
+// is set. backdate is subtracted from the current time to set the start of
+// the validity period, tolerating clock skew without extending the future
+// lifetime.
+func generateUserCertificate(host string, pubkey ssh.PublicKey, username string, subject string, issuer string, duration uint64, backdate uint64, principals []string, forceCommand string) ssh.Certificate {
+	now := uint64(time.Now().Unix())
+	validBefore := now + duration
+
+	// Place the start of the validity period in the past so moderate clock skew
+	// between the CA and SSH servers does not make a freshly issued certificate
+	// not-yet-valid. The future validity is deliberately not extended.
+	validAfter := uint64(0)
+	if backdate < now {
+		validAfter = now - backdate
+	}
 
 	criticalOptions := map[string]string{}
 	if forceCommand != "" {
@@ -46,7 +56,7 @@ func generateUserCertificate(host string, pubkey ssh.PublicKey, username string,
 		//   certificate. Each represents a time in seconds since 1970-01-01
 		//   00:00:00. A certificate is considered valid if:
 		//     valid after <= current time < valid before
-		ValidAfter:  validAfter - 10, // account for slight clock differences
+		ValidAfter:  validAfter,
 		ValidBefore: validBefore,
 		Permissions: ssh.Permissions{
 			CriticalOptions: criticalOptions,

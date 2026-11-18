@@ -644,7 +644,7 @@ func PostHostCertificate(c *gin.Context) {
 	forceCommand := strings.ReplaceAll(info.ForceCommand, "$cert-principals", strings.Join(configPrincipals, " "))
 	forceCommand = strings.ReplaceAll(forceCommand, "$provisioned-user", username)
 
-	cert := generateUserCertificate(host.Host, pubkey, username, subject, issuer, uint64(certDuration), principals, forceCommand)
+	cert := generateUserCertificate(host.Host, pubkey, username, subject, issuer, uint64(certDuration), uint64(info.CertValidityBackdate), principals, forceCommand)
 
 	signer, err := ssh.NewSignerFromKey(info.UserCAPrivateKey)
 	if err != nil || cert.SignCert(rand.Reader, signer) != nil {

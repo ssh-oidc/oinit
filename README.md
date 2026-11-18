@@ -110,7 +110,7 @@ A few properties of the design are worth being explicit about for operators:
 
 ## Configuration
 
-See `configs/config.sample.ini` for the CA config format. Key settings per host group: `host-ca-privkey`, `host-ca-pubkey`, `user-ca-privkey`, `user-ca-pubkey`, `cert-validity` (seconds or `"token"`), `cert-validity-fallback`, `cache-duration`. The `listen-address` can also be set in the default section or overridden via `-l` flag.
+See `configs/config.sample.ini` for the CA config format. Key settings per host group: `host-ca-privkey`, `host-ca-pubkey`, `user-ca-privkey`, `user-ca-pubkey`, `cert-validity` (seconds or `"token"`), `cert-validity-fallback`, `cert-validity-backdate` (seconds, default `3600`), `cache-duration`. The `listen-address` can also be set in the default section or overridden via `-l` flag.
 
 ## Docker
 

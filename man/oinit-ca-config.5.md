@@ -40,6 +40,11 @@ inherit the access token's expiry.
 : Lifetime in seconds used when `cert-validity = token` but the token carries no
 `exp` claim. Default `300`.
 
+`cert-validity-backdate`
+: Seconds by which the certificate's valid-after time is moved into the past to
+tolerate clock skew between the CA and SSH servers. The certificate's future
+validity is not extended. Default `3600`; `0` disables backdating.
+
 `cache-duration`
 : Seconds to cache the motley_cue provider list (including advertised OIDC
 scopes). Default `10`.
@@ -91,6 +96,7 @@ enforced for JWTs; opaque tokens are unaffected.
     user-ca-privkey = /etc/oinit/user-ca
     user-ca-pubkey  = /etc/oinit/user-ca.pub
     cert-validity = 21600
+    cert-validity-backdate = 3600
     cert-validity-fallback = 1800
 
     # Host group

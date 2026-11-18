@@ -62,6 +62,11 @@ user-ca-pubkey  = /etc/oinit/user-ca.pub
 # Fixed certificate validity of 8 hours
 cert-validity = 28800
 
+# Backdate the start ("valid after") of issued certificates by this many
+# seconds to tolerate clock skew between the CA and SSH servers. The future
+# validity is not extended. Set to 0 to disable. Default: 3600 (1 hour).
+# cert-validity-backdate = 3600
+
 # Fallback certificate validity, in case the token does not contain an
 # `exp`iry claim (e.g. google)
 cert-validity-fallback = 1000
@@ -95,6 +100,8 @@ hpc.university.edu = https://auth.university.edu:8080
 - **cert-validity**: Certificate lifetime
   - `token`: Inherit from OIDC token expiration
   - Number: Fixed duration in seconds
+- **cert-validity-backdate**: Seconds to subtract from the certificate's
+  valid-after timestamp to tolerate clock skew. Default: `3600`; `0` disables.
 - **cache-duration**: How long to cache motley_cue user info responses
 
 #### Generating CA Keys

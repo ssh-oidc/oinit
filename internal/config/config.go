@@ -22,6 +22,12 @@ const (
 	// not set cache-duration. Kept short so scope changes on motley_cue are
 	// picked up quickly.
 	DefaultCacheDuration = 10
+
+	// DefaultCertValidityBackdate is how far (in seconds) before issuance a
+	// certificate's valid-after time is placed. This absorbs clock skew between
+	// the CA and SSH servers without extending the certificate's future
+	// validity.
+	DefaultCertValidityBackdate = 3600
 )
 
 type DefaultOptions struct {
@@ -31,6 +37,7 @@ type DefaultOptions struct {
 	PathUserCAPublicKey  string `ini:"user-ca-pubkey"`
 	CertValidity         string `ini:"cert-validity"` // allows non-int values, parsed manually
 	CertValidityFallback int    `ini:"cert-validity-fallback"`
+	CertValidityBackdate int    `ini:"cert-validity-backdate"`
 	CacheDuration        int    `ini:"cache-duration"`
 	ListenAddress        string `ini:"listen-address"`
 	CertPrincipals       string `ini:"cert-principals"`
@@ -73,6 +80,7 @@ type HostInfo struct {
 	URL                  string
 	CertDuration         int
 	CertValidityFallback int
+	CertValidityBackdate int
 	CacheDuration        int
 	CertPrincipals       string
 	ProvisionUser        bool
@@ -87,7 +95,9 @@ type HostInfo struct {
 
 func Load(path string) (Config, error) {
 	var conf Config
-	var defOptions DefaultOptions
+	defOptions := DefaultOptions{
+		CertValidityBackdate: DefaultCertValidityBackdate,
+	}
 
 	cfg, err := ini.Load(path)
 	if err != nil {
@@ -112,6 +122,7 @@ func Load(path string) (Config, error) {
 			PathUserCAPublicKey:  defOptions.PathUserCAPublicKey,
 			CertValidity:         defOptions.CertValidity,
 			CertValidityFallback: defOptions.CertValidityFallback,
+			CertValidityBackdate: defOptions.CertValidityBackdate,
 			CacheDuration:        defOptions.CacheDuration,
 			ListenAddress:        defOptions.ListenAddress,
 			CertPrincipals:       defOptions.CertPrincipals,
@@ -139,6 +150,7 @@ func Load(path string) (Config, error) {
 			if key == "host-ca-privkey" || key == "host-ca-pubkey" ||
 				key == "user-ca-privkey" || key == "user-ca-pubkey" ||
 				key == "cert-validity" || key == "cert-validity-fallback" ||
+				key == "cert-validity-backdate" ||
 				key == "cache-duration" ||
 				key == "listen-address" ||
 				key == "cert-principals" || key == "provision-user" ||
@@ -166,6 +178,12 @@ func Load(path string) (Config, error) {
 		// changes on motley_cue propagate quickly.
 		if hg.CacheDuration == 0 {
 			hg.CacheDuration = DefaultCacheDuration
+		}
+
+		// cert-validity-backdate must not be negative: it is seconds subtracted
+		// from the certificate's valid-after timestamp.
+		if hg.CertValidityBackdate < 0 {
+			return conf, fmt.Errorf("invalid cert-validity-backdate in hostgroup %s: must be non-negative", hg.Name)
 		}
 
 		// Apply defaults for new options
@@ -346,6 +364,7 @@ func (c Config) GetInfo(host string) (HostInfo, error) {
 					URL:                  caURL,
 					CertDuration:         hostGroup.CertDuration,
 					CertValidityFallback: hostGroup.CertValidityFallback,
+					CertValidityBackdate: hostGroup.CertValidityBackdate,
 					CacheDuration:        hostGroup.CacheDuration,
 					CertPrincipals:       hostGroup.CertPrincipals,
 					ProvisionUser:        hostGroup.ProvisionUserVal,
