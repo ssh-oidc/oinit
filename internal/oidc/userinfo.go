@@ -15,18 +15,67 @@ const (
 	WELL_KNOWN_PATH   = "/.well-known/openid-configuration"
 	USERINFO_TIMEOUT  = 10 * time.Second
 	MAX_RESPONSE_SIZE = 64 * 1024 // 64KB
+	MAX_REDIRECTS     = 5
 )
 
-// httpClient is used for discovery and userinfo requests. It refuses to follow
-// redirects: the userinfo request carries the user's Bearer access token, and a
-// followed redirect could bounce that token to an attacker-controlled or
-// plaintext location (an https->http downgrade). A redirect therefore surfaces
-// as a non-200 status and the request fails cleanly instead.
+// httpClient is used for userinfo requests. It refuses to follow redirects: the
+// request carries the user's Bearer access token, and a followed redirect could
+// bounce that token to an attacker-controlled or plaintext location (an
+// https->http downgrade). A redirect therefore surfaces as a non-200 status and
+// the request fails cleanly instead.
 var httpClient = &http.Client{
 	Timeout: USERINFO_TIMEOUT,
 	CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	},
+}
+
+// discoveryHTTPClient is used for requests that do not carry credentials
+// (OpenID Connect discovery and JWKS). Some providers - notably Shibboleth-based
+// OPs such as the NFDI Infrastructure Proxy - answer these endpoints with a 303
+// redirect to another same-origin URL. Following such redirects is safe as long
+// as every hop stays on HTTPS and on the same origin; the policy below enforces
+// that.
+var discoveryHTTPClient = &http.Client{
+	Timeout:       USERINFO_TIMEOUT,
+	CheckRedirect: checkDiscoveryRedirect,
+}
+
+// checkDiscoveryRedirect allows GET redirects only when the target is HTTPS and
+// on the same origin as the original URL. This tolerates the same-origin 303
+// redirects some OPs use for their discovery document without permitting an
+// https->http downgrade or sending the request to an unrelated host.
+func checkDiscoveryRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= MAX_REDIRECTS {
+		return fmt.Errorf("stopped after %d redirects", MAX_REDIRECTS)
+	}
+	if len(via) == 0 {
+		return errors.New("redirect without a previous request")
+	}
+	if req.Method != http.MethodGet {
+		return fmt.Errorf("refusing %s redirect", req.Method)
+	}
+	if err := requireHTTPS(req.URL.String()); err != nil {
+		return err
+	}
+	if !sameOrigin(via[0].URL, req.URL) {
+		return fmt.Errorf("refusing cross-origin redirect from %s to %s", via[0].URL, req.URL)
+	}
+	return nil
+}
+
+// sameOrigin reports whether a and b have the same scheme, host and effective
+// port. Only https URLs are used here, where an empty port means 443.
+func sameOrigin(a, b *url.URL) bool {
+	return a.Scheme == b.Scheme && originHostPort(a) == originHostPort(b)
+}
+
+func originHostPort(u *url.URL) string {
+	port := u.Port()
+	if port == "" && u.Scheme == "https" {
+		port = "443"
+	}
+	return strings.ToLower(u.Hostname()) + ":" + port
 }
 
 // requireHTTPS returns an error unless rawURL is a well-formed https:// URL.
@@ -64,7 +113,7 @@ func fetchDiscovery(issuerURL string) (OpenIDConfiguration, error) {
 
 	discoveryURL := strings.TrimSuffix(issuerURL, "/") + WELL_KNOWN_PATH
 
-	resp, err := httpClient.Get(discoveryURL)
+	resp, err := discoveryHTTPClient.Get(discoveryURL)
 	if err != nil {
 		return config, fmt.Errorf("GET %s: %w", discoveryURL, err)
 	}
