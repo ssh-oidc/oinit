@@ -18,10 +18,11 @@ func TestGenerateUserCertificate(t *testing.T) {
 	subject := "test-subject-123"
 	issuer := "https://accounts.example.com"
 	duration := uint64(3600)
+	backdate := uint64(3600)
 	principals := []string{"oinit", username}
 	forceCommand := "oinit-switch " + username
 
-	certificate := generateUserCertificate(host, pubkey, username, subject, issuer, duration, principals, forceCommand)
+	certificate := generateUserCertificate(host, pubkey, username, subject, issuer, duration, backdate, principals, forceCommand)
 
 	if certificate.Serial != 0 {
 		t.Error("Expected Serial to be 0")
@@ -44,6 +45,14 @@ func TestGenerateUserCertificate(t *testing.T) {
 	if !(certificate.ValidAfter <= currentTime && currentTime < certificate.ValidBefore) {
 		t.Error("Invalid certificate validity period")
 	}
+	wantValidAfter := currentTime - backdate
+	if diff := absDiff(certificate.ValidAfter, wantValidAfter); diff > 1 {
+		t.Errorf("Expected ValidAfter to be about now-%d, got %d", backdate, certificate.ValidAfter)
+	}
+	wantValidBefore := currentTime + duration
+	if diff := absDiff(certificate.ValidBefore, wantValidBefore); diff > 1 {
+		t.Errorf("Expected ValidBefore to be about now+%d, got %d", duration, certificate.ValidBefore)
+	}
 
 	if certificate.Permissions.CriticalOptions["force-command"] != forceCommand {
 		t.Errorf("Expected force-command to be %s, but got %s", forceCommand, certificate.Permissions.CriticalOptions["force-command"])
@@ -62,7 +71,7 @@ func TestGenerateUserCertificateNoForceCommand(t *testing.T) {
 	pk, _, _ := ed25519.GenerateKey(nil)
 	pubkey, _ := ssh.NewPublicKey(pk)
 
-	certificate := generateUserCertificate("example.com", pubkey, "git", "sub", "iss", 3600, []string{"git"}, "")
+	certificate := generateUserCertificate("example.com", pubkey, "git", "sub", "iss", 3600, 0, []string{"git"}, "")
 
 	if _, ok := certificate.Permissions.CriticalOptions["force-command"]; ok {
 		t.Error("Expected no force-command when forceCommand is empty")
@@ -71,6 +80,13 @@ func TestGenerateUserCertificateNoForceCommand(t *testing.T) {
 	if !stringSlicesEqual(certificate.ValidPrincipals, []string{"git"}) {
 		t.Errorf("Expected ValidPrincipals to be [git], but got %v", certificate.ValidPrincipals)
 	}
+}
+
+func absDiff(a, b uint64) uint64 {
+	if a > b {
+		return a - b
+	}
+	return b - a
 }
 
 func stringSlicesEqual(slice1, slice2 []string) bool {

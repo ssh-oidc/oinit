@@ -192,6 +192,43 @@ func TestRequireTokenAudParsing(t *testing.T) {
 	}
 }
 
+func TestCertValidityBackdateParsing(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		want    int
+		wantErr bool
+	}{
+		{name: "absent uses default", body: "", want: DefaultCertValidityBackdate},
+		{name: "explicit value", body: "cert-validity-backdate = 120\n", want: 120},
+		{name: "zero disables backdating", body: "cert-validity-backdate = 0\n", want: 0},
+		{name: "negative value errors", body: "cert-validity-backdate = -1\n", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			conf, err := loadTestConfig(t, tc.body)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			info, err := conf.GetInfo("login.example.com")
+			if err != nil {
+				t.Fatalf("GetInfo: %v", err)
+			}
+			if info.CertValidityBackdate != tc.want {
+				t.Errorf("CertValidityBackdate = %d, want %d", info.CertValidityBackdate, tc.want)
+			}
+		})
+	}
+}
+
 // TestCacheDurationDefault verifies that cache-duration is optional (falls back
 // to DefaultCacheDuration) and that an explicit value is respected. It builds
 // the config directly because the shared loadTestConfig helper always sets
