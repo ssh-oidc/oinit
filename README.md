@@ -81,7 +81,10 @@ A few properties of the design are worth being explicit about for operators:
   authorises the user is made by motley_cue. Opaque (non-JWT) tokens have no
   CA-inspectable audience, so `require-token-aud` does not apply to them. The
   discovery/JWKS/userinfo requests the CA makes are restricted to
-  motley_cue-advertised issuers, require HTTPS, and do not follow redirects.
+  motley_cue-advertised issuers and require HTTPS. Discovery and JWKS requests
+  follow same-origin HTTPS redirects (some Shibboleth-based OPs answer discovery
+  with a 303); userinfo requests carry the bearer token and do not follow
+  redirects.
 
 - **Issued certificates are not bound to a specific host.** An SSH *user*
   certificate carries no host restriction, and a host group may cover many hosts

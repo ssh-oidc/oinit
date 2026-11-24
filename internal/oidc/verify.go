@@ -146,7 +146,7 @@ type jwkSet struct {
 // fetchJWKS retrieves and parses the JWKS at jwksURL into a map of usable public
 // keys keyed by "kid".
 func fetchJWKS(jwksURL string) (map[string]crypto.PublicKey, error) {
-	resp, err := httpClient.Get(jwksURL)
+	resp, err := discoveryHTTPClient.Get(jwksURL)
 	if err != nil {
 		return nil, fmt.Errorf("GET %s: %w", jwksURL, err)
 	}
